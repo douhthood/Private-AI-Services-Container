@@ -1,0 +1,324 @@
+openapi: 3.0.0
+info:
+  title: Private AI Services Container
+  description: >-
+    APIs for performing inference against models deployed on the AI Container
+  contact:
+    name: Simeon Greene
+    email: simeon.m.greene@oracle.com
+  version: 1.0.0
+servers:
+  - url: /
+paths:
+  /v1/models:
+    get:
+      tags:
+        - I Models
+      summary: Get a list of all currently deployed models.
+      responses:
+        '200':
+          description: List of deployed models.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsResponse'
+ 
+  /v1/models/{id}:
+    get:
+      tags:
+        - I Models
+      summary: Get information about a specific model.
+      parameters:
+        - name: id
+          in: path
+          description: A unique model name.
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Information on model specified by model id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelInfo'
+ 
+  /v1/embeddings:
+    post:
+      parameters:
+        - in: header
+          name: x-convert-images
+          description: Indicates if images in the input list require conversion to JPG.
+          required: false
+          schema:
+            type: boolean
+            default: false
+      tags:
+        - I Models
+      summary: Get embeddings against a model.
+      requestBody:
+        description: The payload to get embeddings from.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingRequest'
+      responses:
+        '200':
+          description: Embedding results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResponse'
+        '400':
+          description: Error processing the request data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Model not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: An error occurred during the score operation for this model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+ 
+  /health:
+    get:
+      tags:
+        - II Miscellaneous
+      responses:
+        '200':
+          description: Private AI Services Container is up and running.
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+ 
+  /metrics:
+    get:
+      tags:
+        - II Miscellaneous
+      summary: List available metric names.
+      description: Returns a list of metric names exposed by the application.
+      responses:
+        '200':
+          description: Successful response with metric names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+              examples:
+                sample:
+                  value:
+                    names:
+                      - embeddings_call_error_total
+                      - embeddings_call_latency
+                      - embeddings_call_success_total
+                      - embeddings_call_total
+                      - embeddings_last_latency
+                      - http.server.requests
+                      - jvm.memory.used
+                      - process.cpu.usage
+                      - system.cpu.usage
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+  /metrics/{metricName}:
+    get:
+      tags:
+        - II Miscellaneous
+      summary: Get details for a specific metric.
+      description: >
+        Returns detailed information for a metric, including measurements and available tags.
+        Supports optional tag filters using repeated `tag` query params in the form `key:value`.
+      parameters:
+        - name: metricName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Metric name as returned by GET /metrics.
+        - name: tag
+          in: query
+          required: false
+          description: Tag filter(s) in the form key:value. Repeat for multiple tags.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: Metric details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricDetailResponse'
+              examples:
+                sample:
+                  value:
+                    name: embeddings_call_error_total
+                    description: Total number of errors from embeddings calls.
+                    baseUnit: count
+                    measurements:
+                      - statistic: COUNT
+                        value: 3
+                    availableTags:
+                      - tag: model
+                      - tag: status
+                        values: ["success","error"]
+        '400':
+          description: Invalid tag filter
+        '404':
+          description: Metric not found
+        '500':
+          description: Internal server error
+ 
+  /v1/api:
+    get:
+      tags:
+        - III Documentation
+      summary: Get API Documentation (OpenAPI YAML).
+      description: |
+        Returns the OpenAPI specification for this API in YAML format
+      responses:
+        '200':
+          description: Successfully returned OpenAPI (YAML) document.
+          content:
+            application/yaml:
+              schema:
+                type: string
+ 
+components:
+  schemas:
+    EmbeddingRequest:
+      required:
+        - model
+        - input
+      properties:
+        input:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: Provide a string as input to generate an embedding. To embed multiple items in one request, supply an array of strings. For image embeddings, submit either a single base64-encoded string or an array of such strings.
+        model:
+          type: string
+          description: A unique model name.
+    EmbeddingResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddingData'
+        model:
+          type: string
+    Error:
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    EmbeddingData:
+      type: object
+      properties:
+        embedding:
+          type: array
+          items:
+            type: number
+            format: float
+          description: The embedding vector.
+        index:
+          type: integer
+    ModelInfo:
+      required:
+        - id
+        - modelSize
+        - modelDeployedTime
+      properties:
+        id:
+          pattern: ^[a-zA-Z0-9_]\d{1,50}$
+          type: string
+          description: A unique model name.
+        modelSize:
+          type: string
+          description: >-
+            The size of the model. Suffixes of KB, MB, and GB are used where
+            appropriate.
+        modelDeployedTime:
+          type: string
+          format: date-time
+        modelCapabilities:
+          type: array
+          items:
+            type: string
+            enum:
+              - TEXT_EMBEDDINGS
+              - IMAGE_EMBEDDINGS
+    ModelsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelInfo'
+    MetricsResponse:
+      type: object
+      properties:
+        names:
+          type: array
+          items:
+            type: string
+      required:
+        - names
+ 
+    MetricDetailResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        baseUnit:
+          type: string
+        measurements:
+          type: array
+          items:
+            type: object
+            properties:
+              statistic:
+                type: string
+                description: Micrometer statistic (e.g., COUNT, TOTAL, VALUE, MAX, TOTAL_TIME).
+              value:
+                type: number
+                format: double
+        availableTags:
+          type: array
+          items:
+            type: object
+            properties:
+              tag:
+                type: string
+              values:
+                type: array
+                items:
+                  type: string
+      required:
+        - name
+        - measurements
+        - availableTags
